@@ -1,0 +1,4 @@
+Makefile
+objs/
+gmssl-tests/runtime/logs/
+gmssl-tests/*.dSYM/

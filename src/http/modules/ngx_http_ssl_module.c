@@ -24,7 +24,7 @@ typedef ngx_int_t (*ngx_ssl_variable_handler_pt)(ngx_connection_t *c,
 #define NGX_HTTP_ALPN_PROTOS    "\x08http/1.1\x08http/1.0\x08http/0.9"
 
 
-#ifdef TLSEXT_TYPE_application_layer_protocol_negotiation
+#if !defined(NGX_GMSSL) && defined(TLSEXT_TYPE_application_layer_protocol_negotiation)
 static int ngx_http_ssl_alpn_select(ngx_ssl_conn_t *ssl_conn,
     const unsigned char **out, unsigned char *outlen,
     const unsigned char *in, unsigned int inlen, void *arg);
@@ -69,6 +69,7 @@ static ngx_conf_bitmask_t  ngx_http_ssl_protocols[] = {
     { ngx_string("TLSv1.1"), NGX_SSL_TLSv1_1 },
     { ngx_string("TLSv1.2"), NGX_SSL_TLSv1_2 },
     { ngx_string("TLSv1.3"), NGX_SSL_TLSv1_3 },
+    { ngx_string("TLCP"), NGX_SSL_TLCP },
     { ngx_null_string, 0 }
 };
 
@@ -442,7 +443,7 @@ static ngx_http_variable_t  ngx_http_ssl_vars[] = {
 static ngx_str_t ngx_http_ssl_sess_id_ctx = ngx_string("HTTP");
 
 
-#ifdef TLSEXT_TYPE_application_layer_protocol_negotiation
+#if !defined(NGX_GMSSL) && defined(TLSEXT_TYPE_application_layer_protocol_negotiation)
 
 static int
 ngx_http_ssl_alpn_select(ngx_ssl_conn_t *ssl_conn, const unsigned char **out,
@@ -771,7 +772,23 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     cln->handler = ngx_ssl_cleanup_ctx;
     cln->data = &conf->ssl;
 
-#ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
+#if (NGX_GMSSL)
+    switch (conf->protocols & ~NGX_CONF_BITMASK_SET)
+    {
+    case NGX_SSL_TLCP:
+    case NGX_SSL_TLSv1_2:
+    case NGX_SSL_TLSv1_3:
+        break;
+
+    default:
+        ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
+                      "GmSSL backend requires exactly one protocol in "
+                      "\"ssl_protocols\": TLCP, TLSv1.2, or TLSv1.3");
+        return NGX_CONF_ERROR;
+    }
+#endif
+
+#if !defined(NGX_GMSSL) && defined(SSL_CTRL_SET_TLSEXT_HOSTNAME)
     {
     static ngx_ssl_client_hello_arg cb = { ngx_http_ssl_servername };
 
@@ -791,7 +808,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     }
 #endif
 
-#ifdef TLSEXT_TYPE_application_layer_protocol_negotiation
+#if !defined(NGX_GMSSL) && defined(TLSEXT_TYPE_application_layer_protocol_negotiation)
     SSL_CTX_set_alpn_select_cb(conf->ssl.ctx, ngx_http_ssl_alpn_select, NULL);
 #endif
 
@@ -808,7 +825,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 
     if (conf->certificate_values) {
 
-#ifdef SSL_R_CERT_CB_ERROR
+#if !defined(NGX_GMSSL) && defined(SSL_R_CERT_CB_ERROR)
 
         /* install callback to lookup certificates */
 
@@ -922,7 +939,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_value(conf->session_tickets, prev->session_tickets, 1);
 
-#ifdef SSL_OP_NO_TICKET
+#if !defined(NGX_GMSSL) && defined(SSL_OP_NO_TICKET)
     if (!conf->session_tickets) {
         SSL_CTX_set_options(conf->ssl.ctx, SSL_OP_NO_TICKET);
     }

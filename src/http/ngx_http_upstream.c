@@ -1772,7 +1772,7 @@ ngx_http_upstream_ssl_init_connection(ngx_http_request_t *r,
         }
     }
 
-#ifdef TLSEXT_TYPE_application_layer_protocol_negotiation
+#if !defined(NGX_GMSSL) && defined(TLSEXT_TYPE_application_layer_protocol_negotiation)
 
     if (u->ssl_alpn_protocol.len) {
         if (SSL_set_alpn_protos(c->ssl->connection, u->ssl_alpn_protocol.data,
@@ -1854,10 +1854,13 @@ static void
 ngx_http_upstream_ssl_handshake(ngx_http_request_t *r, ngx_http_upstream_t *u,
     ngx_connection_t *c)
 {
+#if !(NGX_GMSSL)
     long  rc;
+#endif
 
     if (c->ssl->handshaked) {
 
+#if !(NGX_GMSSL)
         if (u->conf->ssl_verify) {
             rc = SSL_get_verify_result(c->ssl->connection);
 
@@ -1875,6 +1878,14 @@ ngx_http_upstream_ssl_handshake(ngx_http_request_t *r, ngx_http_upstream_t *u,
                 goto failed;
             }
         }
+#else
+        if (u->conf->ssl_verify) {
+            ngx_log_error(NGX_LOG_ERR, c->log, 0,
+                          "upstream SSL verification is not supported by "
+                          "the GmSSL backend");
+            goto failed;
+        }
+#endif
 
         if (!c->ssl->sendfile) {
             c->sendfile = 0;
@@ -1967,7 +1978,7 @@ ngx_http_upstream_ssl_name(ngx_http_request_t *r, ngx_http_upstream_t *u,
         goto done;
     }
 
-#ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
+#if !defined(NGX_GMSSL) && defined(SSL_CTRL_SET_TLSEXT_HOSTNAME)
 
     /* as per RFC 6066, literal IPv4 and IPv6 addresses are not permitted */
 

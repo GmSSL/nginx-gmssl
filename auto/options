@@ -156,6 +156,8 @@ PCRE2=YES
 USE_OPENSSL=NO
 USE_OPENSSL_QUIC=NO
 OPENSSL=NONE
+USE_GMSSL=NO
+GMSSL=NONE
 
 USE_ZLIB=NO
 ZLIB=NONE
@@ -375,6 +377,9 @@ use the \"--with-mail_ssl_module\" option instead"
 
         --with-openssl=*)                OPENSSL="$value"           ;;
         --with-openssl-opt=*)            OPENSSL_OPT="$value"       ;;
+        --with-gmssl=*)                  USE_GMSSL=YES
+                                         USE_OPENSSL=YES
+                                         GMSSL="$value"             ;;
 
         --with-md5=*)
             NGX_POST_CONF_MSG="$NGX_POST_CONF_MSG
@@ -606,6 +611,7 @@ cat << END
 
   --with-openssl=DIR                 set path to OpenSSL library sources
   --with-openssl-opt=OPTIONS         set additional build options for OpenSSL
+  --with-gmssl=DIR                   build SSL modules with GmSSL library
 
   --with-debug                       enable debug logging
 

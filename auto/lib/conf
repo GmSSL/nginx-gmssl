@@ -21,7 +21,9 @@ END
 fi
 
 
-if [ $USE_OPENSSL = YES ]; then
+if [ $USE_GMSSL = YES ]; then
+    . auto/lib/gmssl/conf
+elif [ $USE_OPENSSL = YES ]; then
     . auto/lib/openssl/conf
 fi
 

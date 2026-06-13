@@ -1,232 +1,187 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/9335b488-ffcc-4157-8364-2370a0b70ad0">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/3a7eeb08-1133-47f5-859c-fad4f5a6a013">
-  <img alt="NGINX Banner">
-</picture>
+# nginx-gmssl
 
-[![Project Status: Active – The project has reached a stable, usable state and is being actively developed.](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
-[![Community Forum](https://img.shields.io/badge/community-forum-009639?logo=discourse&link=https%3A%2F%2Fcommunity.nginx.org)](https://community.nginx.org)
-[![License](https://img.shields.io/badge/License-BSD%202--Clause-blue.svg)](/LICENSE)
-[![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](/CODE_OF_CONDUCT.md)
+`nginx-gmssl` 是基于 Nginx 1.30.2 的 GmSSL 适配版本。这个项目将 Nginx 原有的 OpenSSL 后端替换为 GmSSL TLS 接口，使 HTTP SSL 模块可以使用国密 TLS 能力提供 HTTPS 服务。
 
-NGINX (pronounced "engine x" or "en-jin-eks") is the world's most popular Web Server, high performance Load Balancer, Reverse Proxy, API Gateway and Content Cache.
+当前实现面向服务端 HTTPS 场景，支持把一个 `server` 配置为 TLCP、TLS 1.2 或 TLS 1.3 三种协议之一。由于 GmSSL 当前服务端接口尚不支持在同一个连接中同时协商 TLCP、TLS 1.2、TLS 1.3，本项目要求每个 `server` 的 `ssl_protocols` 只启用一个协议。
 
-NGINX is free and open source software, distributed under the terms of a simplified [2-clause BSD-like license](LICENSE).
+原始 Nginx 项目说明保留在 [README](README)。
 
-Enterprise distributions, commercial support and training are available from [F5, Inc](https://www.f5.com/products/nginx).
+## 支持的协议和套件
 
-> [!IMPORTANT]
-> The goal of this README is to provide a basic, structured introduction to NGINX for novice users. Please refer to the [full NGINX documentation](https://nginx.org/en/docs/) for detailed information on [installing](https://nginx.org/en/docs/install.html), [building](https://nginx.org/en/docs/configure.html), [configuring](https://nginx.org/en/docs/dirindex.html), [debugging](https://nginx.org/en/docs/debugging_log.html), and more. These documentation pages also contain a more detailed [Beginners Guide](https://nginx.org/en/docs/beginners_guide.html), How-Tos, [Development guide](https://nginx.org/en/docs/dev/development_guide.html), and a complete module and [directive reference](https://nginx.org/en/docs/dirindex.html).
+当前 GmSSL 后端默认配置如下：
 
-# Table of contents
-- [How it works](#how-it-works)
-  - [Modules](#modules)
-  - [Configurations](#configurations)
-  - [Runtime](#runtime)
-- [Downloading and installing](#downloading-and-installing)
-  - [Stable and Mainline binaries](#stable-and-mainline-binaries)
-  - [Linux binary installation process](#linux-binary-installation-process)
-  - [FreeBSD installation process](#freebsd-installation-process)
-  - [Windows executables](#windows-executables)
-  - [Dynamic modules](#dynamic-modules)
-- [Getting started with NGINX](#getting-started-with-nginx)
-  - [Installing SSL certificates and enabling TLS encryption](#installing-ssl-certificates-and-enabling-tls-encryption)
-  - [Load Balancing](#load-balancing)
-  - [Rate limiting](#rate-limiting)
-  - [Content caching](#content-caching)
-- [Building from source](#building-from-source)
-  - [Installing dependencies](#installing-dependencies)
-  - [Cloning the NGINX GitHub repository](#cloning-the-nginx-github-repository)
-  - [Configuring the build](#configuring-the-build)
-  - [Compiling](#compiling)
-  - [Location of binary and installation](#location-of-binary-and-installation)
-  - [Running and testing the installed binary](#running-and-testing-the-installed-binary)
-- [Asking questions and reporting issues](#asking-questions-and-reporting-issues)
-- [Contributing code](#contributing-code)
-- [Additional help and resources](#additional-help-and-resources)
-- [Changelog](#changelog)
-- [License](#license)
+| Nginx 配置 | GmSSL 协议 | 默认套件 |
+| --- | --- | --- |
+| `ssl_protocols TLCP;` | TLCP | `TLS_ECDHE_SM4_CBC_SM3`, `TLS_ECC_SM4_CBC_SM3` |
+| `ssl_protocols TLSv1.2;` | TLS 1.2 | `TLS_ECDHE_SM4_CBC_SM3` |
+| `ssl_protocols TLSv1.3;` | TLS 1.3 | `TLS_SM4_GCM_SM3` |
 
-# How it works
-NGINX is installed software with binary packages available for all major operating systems and Linux distributions. See [Tested OS and Platforms](https://nginx.org/en/#tested_os_and_platforms) for a full list of compatible systems.
+曲线默认使用 `sm2p256v1`，签名算法默认使用 `sm2sig_sm3`。当前后端主要覆盖静态文件服务和 HTTP 反向代理入口的 HTTPS 连接；SNI、ALPN、客户端证书验证、会话恢复、OCSP Stapling 等 OpenSSL 生态中的高级能力尚未完整映射到 GmSSL。
 
-> [!IMPORTANT]
-> While nearly all popular Linux-based operating systems are distributed with a community version of nginx, we highly advise installation and usage of official [packages](https://nginx.org/en/linux_packages.html) or sources from this repository. Doing so ensures that you're using the most recent release or source code, including the latest feature-set, fixes and security patches.
+## 编译
 
-## Modules
-NGINX is comprised of individual modules, each extending core functionality by providing additional, configurable features. See "Modules reference" at the bottom of [nginx documentation](https://nginx.org/en/docs/) for a complete list of official modules.
+先安装或构建 GmSSL，并确保头文件和动态库可被 Nginx 找到。例如 GmSSL 安装到 `/usr/local`：
 
-NGINX modules can be built and distributed as static or dynamic modules. Static modules are defined at build-time, compiled, and distributed in the resulting binaries. See [Dynamic Modules](#dynamic-modules) for more information on how they work, as well as, how to obtain, install, and configure them.
-
-> [!TIP]
-> You can issue the following command to see which static modules your NGINX binaries were built with:
-```bash
-nginx -V
-```
-> See [Configuring the build](#configuring-the-build) for information on how to include specific Static modules into your nginx build.
-
-## Configurations
-NGINX is highly flexible and configurable. Provisioning the software is achieved via text-based config file(s) accepting parameters called "[Directives](https://nginx.org/en/docs/dirindex.html)". See [Configuration File's Structure](https://nginx.org/en/docs/beginners_guide.html#conf_structure) for a comprehensive description of how NGINX configuration files work.
-
-> [!NOTE]
-> The set of directives available to your distribution of NGINX is dependent on which [modules](#modules) have been made available to it.
-
-## Runtime
-Rather than running in a single, monolithic process, NGINX is architected to scale beyond Operating System process limitations by operating as a collection of processes. They include:
-- A "master" process that maintains worker processes, as well as, reads and evaluates configuration files.
-- One or more "worker" processes that process data (eg. HTTP requests).
-
-The number of [worker processes](https://nginx.org/en/docs/ngx_core_module.html#worker_processes) is defined in the configuration file and may be fixed for a given configuration or automatically adjusted to the number of available CPU cores. In most cases, the latter option optimally balances load across available system resources, as NGINX is designed to efficiently distribute work across all worker processes.
-
-> [!TIP]
-> Processes synchronize data through shared memory. For this reason, many NGINX directives require the allocation of shared memory zones. As an example, when configuring [rate limiting](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html#limit_req), connecting clients may need to be tracked in a [common memory zone](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html#limit_req_zone) so all worker processes can know how many times a particular client has accessed the server in a span of time.
-
-# Downloading and installing
-Follow these steps to download and install precompiled NGINX binaries. You may also choose to [build NGINX locally from source code](#building-from-source).
-
-## Stable and Mainline binaries
-NGINX binaries are built and distributed in two versions: stable and mainline. Stable binaries are built from stable branches and only contain critical fixes backported from the mainline version. Mainline binaries are built from the [master branch](https://github.com/nginx/nginx/tree/master) and contain the latest features and bugfixes. You'll need to [decide which is appropriate for your purposes](https://docs.nginx.com/nginx/admin-guide/installing-nginx/installing-nginx-open-source/#choosing-between-a-stable-or-a-mainline-version).
-
-## Linux binary installation process
-The NGINX binary installation process takes advantage of package managers native to specific Linux distributions. For this reason, first-time installations involve adding the official NGINX package repository to your system's package manager. Follow [these steps](https://nginx.org/en/linux_packages.html) to download, verify, and install NGINX binaries using the package manager appropriate for your Linux distribution.
-
-### Upgrades
-Future upgrades to the latest version can be managed using the same package manager without the need to manually download and verify binaries.
-
-## FreeBSD installation process
-For more information on installing NGINX on FreeBSD system, visit https://nginx.org/en/docs/install.html
-
-## Windows executables
-Windows executables for mainline and stable releases can be found on the main [NGINX download page](https://nginx.org/en/download.html). Note that the current implementation of NGINX for Windows is at the Proof-of-Concept stage and should only be used for development and testing purposes. For additional information, please see [nginx for Windows](https://nginx.org/en/docs/windows.html).
-
-## Dynamic modules
-NGINX version 1.9.11 added support for [Dynamic Modules](https://nginx.org/en/docs/ngx_core_module.html#load_module). Unlike Static modules, dynamically built modules can be downloaded, installed, and configured after the core NGINX binaries have been built. [Official dynamic module binaries](https://nginx.org/en/linux_packages.html#dynmodules) are available from the same package repository as the core NGINX binaries described in previous steps.
-
-> [!TIP]
-> [NGINX JavaScript (njs)](https://github.com/nginx/njs), is a popular NGINX dynamic module that enables the extension of core NGINX functionality using familiar JavaScript syntax.
-
-> [!IMPORTANT]
-> If desired, dynamic modules can also be built statically into NGINX at compile time.
-
-# Getting started with NGINX
-For a gentle introduction to NGINX basics, please see our [Beginner’s Guide](https://nginx.org/en/docs/beginners_guide.html).
-
-## Installing SSL certificates and enabling TLS encryption
-See [Configuring HTTPS servers](https://nginx.org/en/docs/http/configuring_https_servers.html) for a quick guide on how to enable secure traffic to your NGINX installation.
-
-## Load Balancing
-For a quick start guide on configuring NGINX as a Load Balancer, please see [Using nginx as HTTP load balancer](https://nginx.org/en/docs/http/load_balancing.html).
-
-## Rate limiting
-See our [Rate Limiting with NGINX](https://blog.nginx.org/blog/rate-limiting-nginx) blog post for an overview of core concepts for provisioning NGINX as an API Gateway.
-
-## Content caching
-See [A Guide to Caching with NGINX and NGINX Plus](https://blog.nginx.org/blog/nginx-caching-guide) blog post for an overview of how to use NGINX as a content cache (e.g. edge server of a content delivery network).
-
-# Building from source
-The following steps can be used to build NGINX from source code available in this repository.
-
-## Installing dependencies
-Most Linux distributions will require several dependencies to be installed in order to build NGINX. The following instructions are specific to the `apt` package manager, widely available on most Ubuntu/Debian distributions and their derivatives.
-
-> [!TIP]
-> It is always a good idea to update your package repository lists prior to installing new packages.
-> ```bash
-> sudo apt update
-> ```
-
-### Installing compiler and make utility
-Use the following command to install the GNU C compiler and Make utility.
-
-```bash
-sudo apt install gcc make
+```sh
+./configure --with-http_ssl_module --with-gmssl=/usr/local
+make -j
 ```
 
-### Installing dependency libraries
+如果运行时系统找不到 `libgmssl`，可以在配置时增加 rpath：
 
-```bash
-sudo apt install libpcre3-dev zlib1g-dev
+```sh
+./configure --with-http_ssl_module --with-gmssl=/usr/local \
+    --with-ld-opt="-Wl,-rpath,/usr/local/lib"
+make -j
 ```
 
-> [!WARNING]
-> This is the minimal set of dependency libraries needed to build NGINX with rewriting and gzip capabilities. Other dependencies may be required if you choose to build NGINX with additional modules. Monitor the output of the `configure` command discussed in the following sections for information on which modules may be missing. For example, if you plan to use SSL certificates to encrypt traffic with TLS, you'll need to install the OpenSSL library. To do so, issue the following command.
+启动时会检查编译期 `GMSSL_VERSION_STR` 和运行时 `gmssl_version_str()` 是否一致。如果 Nginx 链接到的 GmSSL 动态库与编译时使用的头文件版本不一致，Nginx 会报错并停止启动。
 
->```bash
->sudo apt install libssl-dev
+## 安全注意事项
 
-## Cloning the NGINX GitHub repository
-Using your preferred method, clone the NGINX repository into your development directory. See [Cloning a GitHub Repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) for additional help.
+- 请使用可信来源构建或安装 GmSSL，并保证运行时加载的 `libgmssl` 与编译时头文件版本一致。
+- TLCP 需要签名证书和加密证书两套 SM2 证书/私钥。TLS 1.2 和 TLS 1.3 示例使用 SM2 签名证书链和对应私钥。
+- 私钥建议使用口令加密，并通过 `ssl_password_file` 指定口令文件。生产环境中应限制证书、私钥、口令文件权限。
+- 当前后端不支持在同一个 `server` 中同时启用多个 TLS/TLCP 协议版本；请按端口或虚拟主机拆分。
+- 本项目仍属于适配实现，部署到生产环境前应结合业务场景进行互操作性、错误处理、日志和安全测试。
 
-```bash
-git clone https://github.com/nginx/nginx.git
+## SSL 和证书配置
+
+TLS 1.2 示例：
+
+```nginx
+server {
+    listen 8443 ssl;
+    server_name localhost;
+
+    ssl_protocols TLSv1.2;
+    ssl_certificate /path/to/sm2certs.pem;
+    ssl_certificate_key /path/to/sm2signkey.pem;
+    ssl_password_file /path/to/pass.txt;
+
+    root /path/to/html;
+}
 ```
 
-## Configuring the build
-Prior to building NGINX, you must run the `configure` script with [appropriate flags](https://nginx.org/en/docs/configure.html). This will generate a Makefile in your NGINX source root directory that can then be used to compile NGINX with [options specified during configuration](https://nginx.org/en/docs/configure.html).
+TLS 1.3 示例：
 
-From the NGINX source code repository's root directory:
+```nginx
+server {
+    listen 8444 ssl;
+    server_name localhost;
 
-```bash
-auto/configure
+    ssl_protocols TLSv1.3;
+    ssl_certificate /path/to/sm2certs.pem;
+    ssl_certificate_key /path/to/sm2signkey.pem;
+    ssl_password_file /path/to/pass.txt;
+
+    root /path/to/html;
+}
 ```
 
-> [!IMPORTANT]
-> Configuring the build without any flags will compile NGINX with the default set of options. Please refer to https://nginx.org/en/docs/configure.html for a full list of available build configuration options.
+TLCP 示例：
 
-## Compiling
-The `configure` script will generate a `Makefile` in the NGINX source root directory upon successful execution. To compile NGINX into a binary, issue the following command from that same directory:
+```nginx
+server {
+    listen 8445 ssl;
+    server_name localhost;
 
-```bash
-make
+    ssl_protocols TLCP;
+    ssl_certificate /path/to/double_certs.pem;
+    ssl_certificate_key /path/to/double_keys.pem;
+    ssl_password_file /path/to/pass.txt;
+
+    root /path/to/html;
+}
 ```
 
-## Location of binary and installation
-After successful compilation, a binary will be generated at `<NGINX_SRC_ROOT_DIR>/objs/nginx`. To install this binary, issue the following command from the source root directory:
+TLCP 的 `double_certs.pem` 通常按签名证书、加密证书、CA 证书链顺序拼接；`double_keys.pem` 通常按签名私钥、加密私钥顺序拼接，并使用相同口令。
 
-```bash
-sudo make install
+反向代理入口也可以使用 GmSSL HTTPS：
+
+```nginx
+server {
+    listen 8446 ssl;
+    server_name localhost;
+
+    ssl_protocols TLSv1.2;
+    ssl_certificate /path/to/sm2certs.pem;
+    ssl_certificate_key /path/to/sm2signkey.pem;
+    ssl_password_file /path/to/pass.txt;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+    }
+}
 ```
 
-> [!IMPORTANT]
-> The binary will be installed into the `/usr/local/nginx/` directory.
+仓库中的 `gmssl-tests/` 提供了本地测试配置：
 
-## Running and testing the installed binary
-To run the installed binary, issue the following command:
+- `gmssl-tests/tls12.conf`
+- `gmssl-tests/tls13.conf`
+- `gmssl-tests/tlcp.conf`
+- `gmssl-tests/proxy_tls12.conf`
 
-```bash
-sudo /usr/local/nginx/sbin/nginx
+这些配置包含本机路径，换到其他机器时需要按实际 GmSSL 构建目录和仓库路径调整证书路径、口令文件路径和 `root` 路径。
+
+## 使用 gmssl 命令行测试
+
+启动 TLS 1.2 测试服务：
+
+```sh
+objs/nginx -p "$PWD/gmssl-tests/runtime" -c "$PWD/gmssl-tests/tls12.conf"
 ```
 
-You may test NGINX operation using `curl`.
+使用 GmSSL TLS 1.2 客户端访问：
 
-```bash
-curl localhost
+```sh
+printf 'GET / HTTP/1.0\r\nHost: localhost\r\n\r\n' | \
+gmssl tls12_client \
+    -host 127.0.0.1 -port 8443 \
+    -cacert /path/to/sm2rootcacert.pem \
+    -cipher_suite TLS_ECDHE_SM4_CBC_SM3 \
+    -supported_group sm2p256v1 \
+    -sig_alg sm2sig_sm3
 ```
 
-The output of which should start with:
+TLS 1.3：
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-<title>Welcome to nginx!</title>
+```sh
+printf 'GET / HTTP/1.0\r\nHost: localhost\r\n\r\n' | \
+gmssl tls13_client \
+    -host 127.0.0.1 -port 8444 \
+    -cacert /path/to/sm2rootcacert.pem \
+    -cipher_suite TLS_SM4_GCM_SM3 \
+    -supported_group sm2p256v1 \
+    -sig_alg sm2sig_sm3
 ```
 
-# Asking questions and reporting issues
-See our [Support](SUPPORT.md) guidelines for information on how discuss the codebase, ask troubleshooting questions, and report issues.
+TLCP：
 
-# Contributing code
-Please see the [Contributing](CONTRIBUTING.md) guide for information on how to contribute code.
+```sh
+gmssl tlcp_client \
+    -host 127.0.0.1 -port 8445 \
+    -cacert gmssl-tests/tlcp-certs/rootcacert.pem \
+    -cipher_suite TLS_ECC_SM4_CBC_SM3 \
+    -get /
+```
 
-# Additional help and resources
-- See the [NGINX Community Blog](https://blog.nginx.org/) for more tips, tricks and HOW-TOs related to NGINX and related projects.
-- Access [nginx.org](https://nginx.org/), your go-to source for all documentation, information and software related to the NGINX suite of projects.
+反向代理测试：
 
-# Changelog
-See our [changelog](https://nginx.org/en/CHANGES) to keep track of updates.
+```sh
+objs/nginx -p "$PWD/gmssl-tests/runtime" -c "$PWD/gmssl-tests/proxy_tls12.conf"
 
-# License
-[2-clause BSD-like license](LICENSE)
+printf 'GET / HTTP/1.0\r\nHost: localhost\r\n\r\n' | \
+gmssl tls12_client \
+    -host 127.0.0.1 -port 8446 \
+    -cacert /path/to/sm2rootcacert.pem \
+    -cipher_suite TLS_ECDHE_SM4_CBC_SM3 \
+    -supported_group sm2p256v1 \
+    -sig_alg sm2sig_sm3
+```
 
----
-Additional documentation available at: https://nginx.org/en/docs
+预期可以看到 HTTP 响应头和测试页面内容。
+
+## 许可证
+
+本项目基于 Nginx 源码，遵循原 Nginx 许可证。GmSSL 遵循其自身项目许可证。

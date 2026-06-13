@@ -12,6 +12,81 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 
+#if (NGX_GMSSL)
+
+#include <gmssl/tls.h>
+#include <gmssl/version.h>
+
+#define NGX_SSL_NAME     "GmSSL"
+
+#define ngx_ssl_version()       gmssl_version_str()
+
+#define ngx_ssl_session_t       void
+#define ngx_ssl_conn_t          TLS_CONNECT
+
+typedef struct ngx_ssl_ocsp_s   ngx_ssl_ocsp_t;
+typedef struct ngx_ssl_cache_s  ngx_ssl_cache_t;
+
+struct ngx_ssl_s {
+    TLS_CTX                    *ctx;
+    ngx_log_t                  *log;
+    size_t                      buffer_size;
+
+    ngx_array_t                 certs;
+
+    ngx_rbtree_t                staple_rbtree;
+    ngx_rbtree_node_t           staple_sentinel;
+
+    ngx_uint_t                  protocols;
+    ngx_uint_t                  protocol;
+    ngx_str_t                   certificate;
+    ngx_str_t                   certificate_key;
+    ngx_str_t                   certificate_pass;
+    ngx_str_t                   ca_certificate;
+    ngx_uint_t                  verify_depth;
+    ngx_uint_t                  client;
+};
+
+struct ngx_ssl_connection_s {
+    ngx_ssl_conn_t             *connection;
+    TLS_CTX                    *session_ctx;
+
+    ngx_int_t                   last;
+    ngx_buf_t                  *buf;
+    size_t                      buffer_size;
+
+    ngx_connection_handler_pt   handler;
+
+    ngx_ssl_session_t          *session;
+    ngx_connection_handler_pt   save_session;
+
+    ngx_event_handler_pt        saved_read_handler;
+    ngx_event_handler_pt        saved_write_handler;
+
+    ngx_ssl_ocsp_t             *ocsp;
+
+    u_char                      early_buf;
+
+    unsigned                    handshaked:1;
+    unsigned                    handshake_rejected:1;
+    unsigned                    renegotiation:1;
+    unsigned                    buffer:1;
+    unsigned                    sendfile:1;
+    unsigned                    no_wait_shutdown:1;
+    unsigned                    no_send_shutdown:1;
+    unsigned                    shutdown_without_free:1;
+    unsigned                    handshake_buffer_set:1;
+    unsigned                    session_timeout_set:1;
+    unsigned                    try_early_data:1;
+    unsigned                    in_early:1;
+    unsigned                    in_ocsp:1;
+    unsigned                    early_preread:1;
+    unsigned                    write_blocked:1;
+    unsigned                    sni_accepted:1;
+};
+
+#else
+
 #define OPENSSL_SUPPRESS_DEPRECATED
 
 #include <openssl/ssl.h>
@@ -97,10 +172,14 @@
 #define SSL_group_to_name(s, nid)    NULL
 #endif
 
+#endif /* NGX_GMSSL */
+
 
 typedef struct ngx_ssl_ocsp_s   ngx_ssl_ocsp_t;
+typedef struct ngx_ssl_cache_s  ngx_ssl_cache_t;
 
 
+#if !(NGX_GMSSL)
 struct ngx_ssl_s {
     SSL_CTX                    *ctx;
     ngx_log_t                  *log;
@@ -150,6 +229,7 @@ struct ngx_ssl_connection_s {
     unsigned                    write_blocked:1;
     unsigned                    sni_accepted:1;
 };
+#endif
 
 
 #define NGX_SSL_NO_SCACHE            -2
@@ -208,12 +288,17 @@ typedef struct {
 #define NGX_SSL_TLSv1_1  0x0010
 #define NGX_SSL_TLSv1_2  0x0020
 #define NGX_SSL_TLSv1_3  0x0040
+#define NGX_SSL_TLCP     0x0080
 
 
+#if (NGX_GMSSL)
+#define NGX_SSL_DEFAULT_PROTOCOLS  NGX_SSL_TLSv1_2
+#else
 #if (defined SSL_OP_NO_TLSv1_2 || defined SSL_OP_NO_TLSv1_3)
 #define NGX_SSL_DEFAULT_PROTOCOLS  (NGX_SSL_TLSv1_2|NGX_SSL_TLSv1_3)
 #else
 #define NGX_SSL_DEFAULT_PROTOCOLS  (NGX_SSL_TLSv1|NGX_SSL_TLSv1_1)
+#endif
 #endif
 
 
@@ -305,15 +390,25 @@ enum ssl_select_cert_result_t ngx_ssl_select_certificate(
 ngx_int_t ngx_ssl_create_connection(ngx_ssl_t *ssl, ngx_connection_t *c,
     ngx_uint_t flags);
 
+#if (NGX_GMSSL)
+void ngx_ssl_remove_cached_session(TLS_CTX *ssl, ngx_ssl_session_t *sess);
+#else
 void ngx_ssl_remove_cached_session(SSL_CTX *ssl, ngx_ssl_session_t *sess);
+#endif
 ngx_int_t ngx_ssl_set_session(ngx_connection_t *c, ngx_ssl_session_t *session);
 ngx_ssl_session_t *ngx_ssl_get_session(ngx_connection_t *c);
 ngx_ssl_session_t *ngx_ssl_get0_session(ngx_connection_t *c);
+#if (NGX_GMSSL)
+#define ngx_ssl_free_session(s)
+#define ngx_ssl_get_connection(ssl_conn)  ((ngx_connection_t *) NULL)
+#define ngx_ssl_get_server_conf(ssl_ctx)  NULL
+#else
 #define ngx_ssl_free_session        SSL_SESSION_free
 #define ngx_ssl_get_connection(ssl_conn)                                      \
     SSL_get_ex_data(ssl_conn, ngx_ssl_connection_index)
 #define ngx_ssl_get_server_conf(ssl_ctx)                                      \
     SSL_CTX_get_ex_data(ssl_ctx, ngx_ssl_server_conf_index)
+#endif
 
 #define ngx_ssl_verify_error_optional(n)                                      \
     (n == X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT                              \

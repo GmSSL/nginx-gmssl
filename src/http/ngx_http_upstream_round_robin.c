@@ -1094,6 +1094,9 @@ ngx_int_t
 ngx_http_upstream_set_round_robin_peer_session(ngx_peer_connection_t *pc,
     void *data)
 {
+#if (NGX_GMSSL)
+    return NGX_OK;
+#else
     ngx_http_upstream_rr_peer_data_t  *rrp = data;
 
     ngx_int_t                      rc;
@@ -1149,6 +1152,7 @@ ngx_http_upstream_set_round_robin_peer_session(ngx_peer_connection_t *pc,
                    "set session: %p", ssl_session);
 
     return rc;
+#endif
 }
 
 
@@ -1156,6 +1160,9 @@ void
 ngx_http_upstream_save_round_robin_peer_session(ngx_peer_connection_t *pc,
     void *data)
 {
+#if (NGX_GMSSL)
+    return;
+#else
     ngx_http_upstream_rr_peer_data_t  *rrp = data;
 
     ngx_ssl_session_t             *old_ssl_session, *ssl_session;
@@ -1248,6 +1255,7 @@ ngx_http_upstream_save_round_robin_peer_session(ngx_peer_connection_t *pc,
 
         ngx_ssl_free_session(old_ssl_session);
     }
+#endif
 }
 
 

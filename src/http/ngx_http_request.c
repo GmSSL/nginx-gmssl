@@ -830,7 +830,7 @@ ngx_http_ssl_handshake_handler(ngx_connection_t *c)
 
         c->ssl->no_wait_shutdown = 1;
 
-#if (NGX_HTTP_V2                                                              \
+#if (!NGX_GMSSL && NGX_HTTP_V2                                                \
      && defined TLSEXT_TYPE_application_layer_protocol_negotiation)
         {
         unsigned int             len;
@@ -2104,10 +2104,12 @@ ngx_http_process_request(ngx_http_request_t *r)
 #if (NGX_HTTP_SSL)
 
     if (r->http_connection->ssl) {
-        long                      rc;
-        X509                     *cert;
-        const char               *s;
         ngx_http_ssl_srv_conf_t  *sscf;
+#if !(NGX_GMSSL)
+        long                      rc;
+        const char               *s;
+        X509                     *cert;
+#endif
 
         if (c->ssl == NULL) {
             ngx_log_error(NGX_LOG_INFO, c->log, 0,
@@ -2118,6 +2120,7 @@ ngx_http_process_request(ngx_http_request_t *r)
 
         sscf = ngx_http_get_module_srv_conf(r, ngx_http_ssl_module);
 
+#if !(NGX_GMSSL)
         if (sscf->verify) {
             rc = SSL_get_verify_result(c->ssl->connection);
 
@@ -2163,6 +2166,15 @@ ngx_http_process_request(ngx_http_request_t *r)
                 return;
             }
         }
+#else
+        if (sscf->verify) {
+            ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                          "client certificate verification is not supported "
+                          "by the GmSSL backend");
+            ngx_http_finalize_request(r, NGX_HTTPS_CERT_ERROR);
+            return;
+        }
+#endif
     }
 
 #endif

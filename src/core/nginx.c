@@ -9,6 +9,10 @@
 #include <ngx_core.h>
 #include <nginx.h>
 
+#if (NGX_GMSSL)
+#include <gmssl/version.h>
+#endif
+
 
 static void ngx_show_version_info(void);
 static ngx_int_t ngx_add_inherited_sockets(ngx_cycle_t *cycle);
@@ -239,7 +243,9 @@ main(int argc, char *const *argv)
 
     /* STUB */
 #if (NGX_OPENSSL)
-    ngx_ssl_init(log);
+    if (ngx_ssl_init(log) != NGX_OK) {
+        return 1;
+    }
 #endif
 
     /*
@@ -436,6 +442,9 @@ ngx_show_version_info(void)
 #endif
 
 #if (NGX_SSL)
+#if (NGX_GMSSL)
+        ngx_write_stderr("built with " GMSSL_VERSION_STR NGX_LINEFEED);
+#else
         if (ngx_strcmp(ngx_ssl_version(), OPENSSL_VERSION_TEXT) == 0) {
             ngx_write_stderr("built with " OPENSSL_VERSION_TEXT NGX_LINEFEED);
         } else {
@@ -444,6 +453,7 @@ ngx_show_version_info(void)
             ngx_write_stderr((char *) (uintptr_t) ngx_ssl_version());
             ngx_write_stderr(")" NGX_LINEFEED);
         }
+#endif
 #ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
         ngx_write_stderr("TLS SNI support enabled" NGX_LINEFEED);
 #else

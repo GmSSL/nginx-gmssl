@@ -1,0 +1,38 @@
+
+# Copyright (C) GmSSL Project.
+
+
+if [ $GMSSL = NONE ]; then
+
+cat << END
+
+$0: error: --with-gmssl=DIR requires a GmSSL install or build prefix.
+
+END
+    exit 1
+fi
+
+
+have=NGX_GMSSL . auto/have
+have=NGX_SSL . auto/have
+
+case "$CC" in
+
+    cl | bcc32)
+        CORE_INCS="$CORE_INCS $GMSSL/include"
+        CORE_DEPS="$CORE_DEPS $GMSSL/include/gmssl/tls.h"
+        CORE_LIBS="$CORE_LIBS $GMSSL/lib/gmssl.lib"
+        CORE_LIBS="$CORE_LIBS ws2_32.lib advapi32.lib"
+    ;;
+
+    *)
+        CORE_INCS="$CORE_INCS $GMSSL/include"
+        CORE_DEPS="$CORE_DEPS $GMSSL/include/gmssl/tls.h"
+        CORE_LIBS="$CORE_LIBS -L$GMSSL/lib -lgmssl"
+        CORE_LIBS="$CORE_LIBS $NGX_LIBDL $NGX_LIBPTHREAD"
+
+        if [ "$NGX_PLATFORM" = win32 ]; then
+            CORE_LIBS="$CORE_LIBS -lws2_32 -ladvapi32"
+        fi
+    ;;
+esac
