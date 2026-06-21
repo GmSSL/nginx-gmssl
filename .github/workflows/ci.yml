@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build nginx-gmssl
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libpcre2-dev zlib1g-dev
+
+      - name: Build and install GmSSL v3.2.0
+        run: |
+          git clone --depth 1 --branch v3.2.0 https://github.com/guanzhi/GmSSL.git "$RUNNER_TEMP/GmSSL"
+          cmake -S "$RUNNER_TEMP/GmSSL" -B "$RUNNER_TEMP/GmSSL/build" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/GmSSL/build" --parallel 4
+          sudo cmake --install "$RUNNER_TEMP/GmSSL/build"
+          sudo ldconfig
+
+      - name: Configure nginx-gmssl
+        run: |
+          ./configure \
+            --with-http_ssl_module \
+            --with-gmssl=/usr/local \
+            --with-ld-opt="-Wl,-rpath,/usr/local/lib"
+
+      - name: Build nginx-gmssl
+        run: make -j4
+
+      - name: Verify GmSSL backend
+        run: |
+          mkdir -p logs
+          objs/nginx -V
+          objs/nginx -t -p "$PWD" -c gmssl-tests/tlcp.conf
