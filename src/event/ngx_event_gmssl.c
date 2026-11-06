@@ -852,7 +852,18 @@ ngx_int_t ngx_ssl_get_serial_number(ngx_connection_t *c, ngx_pool_t *pool,
 ngx_int_t ngx_ssl_get_fingerprint(ngx_connection_t *c, ngx_pool_t *pool,
     ngx_str_t *s) { return ngx_gmssl_empty(pool, s); }
 ngx_int_t ngx_ssl_get_client_verify(ngx_connection_t *c, ngx_pool_t *pool,
-    ngx_str_t *s) { ngx_str_set(s, "NONE"); return NGX_OK; }
+    ngx_str_t *s)
+{
+    int verify_result;
+
+    if (tls_get_verify_result(c->ssl->connection, &verify_result) != 1) {
+        ngx_str_set(s, "FAILED");
+        return NGX_OK;
+    }
+
+    ngx_str_set(s, verify_result == X509_verify_ok ? "SUCCESS" : "FAILED");
+    return NGX_OK;
+}
 ngx_int_t ngx_ssl_get_client_v_start(ngx_connection_t *c, ngx_pool_t *pool,
     ngx_str_t *s) { return ngx_gmssl_empty(pool, s); }
 ngx_int_t ngx_ssl_get_client_v_end(ngx_connection_t *c, ngx_pool_t *pool,
@@ -999,6 +1010,18 @@ ngx_gmssl_configure_ctx(ngx_ssl_t *ssl)
                                           : TLS_DEFAULT_VERIFY_DEPTH) != 1)
     {
         return NGX_ERROR;
+    }
+
+    if (ssl->verify) {
+        if (tls_ctx_enable_certificate_request(ssl->ctx, 1) != 1) {
+            return NGX_ERROR;
+        }
+
+        if (ssl->verify == 3
+            && tls_ctx_enable_client_certificate_optional(ssl->ctx, 1) != 1)
+        {
+            return NGX_ERROR;
+        }
     }
 
     if (ssl->certificate.len == 0) {

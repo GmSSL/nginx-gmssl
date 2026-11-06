@@ -44,6 +44,7 @@ struct ngx_ssl_s {
     ngx_str_t                   certificate_pass;
     ngx_str_t                   ca_certificate;
     ngx_uint_t                  verify_depth;
+    ngx_uint_t                  verify;
     ngx_uint_t                  client;
 };
 

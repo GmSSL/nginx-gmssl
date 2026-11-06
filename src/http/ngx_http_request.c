@@ -2168,11 +2168,17 @@ ngx_http_process_request(ngx_http_request_t *r)
         }
 #else
         if (sscf->verify) {
-            ngx_log_error(NGX_LOG_INFO, c->log, 0,
-                          "client certificate verification is not supported "
-                          "by the GmSSL backend");
-            ngx_http_finalize_request(r, NGX_HTTPS_CERT_ERROR);
-            return;
+            int verify_result = 0;
+
+            if (tls_get_verify_result(c->ssl->connection, &verify_result) != 1
+                || verify_result != X509_verify_ok)
+            {
+                ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                              "client GmSSL certificate verify error: %d",
+                              verify_result);
+                ngx_http_finalize_request(r, NGX_HTTPS_CERT_ERROR);
+                return;
+            }
         }
 #endif
     }
