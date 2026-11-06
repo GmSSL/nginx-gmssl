@@ -763,6 +763,10 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         return NGX_CONF_ERROR;
     }
 
+#if (NGX_GMSSL)
+    conf->ssl.verify = conf->verify;
+#endif
+
     cln = ngx_pool_cleanup_add(cf->pool, 0);
     if (cln == NULL) {
         ngx_ssl_cleanup_ctx(&conf->ssl);

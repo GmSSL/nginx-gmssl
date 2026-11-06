@@ -183,6 +183,39 @@ ngx_int_t
 ngx_ssl_client_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
     ngx_int_t depth)
 {
+    if (cert->len == 0) {
+        return NGX_OK;
+    }
+
+    if (ngx_conf_full_name(cf->cycle, cert, 1) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    /*
+     * ssl_client_certificate is the CA list sent in CertificateRequest and
+     * the trust store used to validate the client's certificate.  The GmSSL
+     * backend keeps both in the same TLS_CTX, so retain the configured file
+     * here just as ssl_trusted_certificate does.
+     */
+    if (ngx_gmssl_set_str(cf->pool, &ssl->ca_certificate, cert) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    ssl->verify_depth = depth;
+
+    /* ngx_ssl_certificate() may have initialized the TLS_CTX before the
+     * HTTP SSL module processes ssl_client_certificate.  In that case the
+     * normal lazy context setup has already run, so load the CA now. */
+    if (ssl->ctx && ssl->ctx->protocol
+        && tls_ctx_set_ca_certificates(ssl->ctx,
+                                       (char *) ssl->ca_certificate.data,
+                                       ssl->verify_depth
+                                          ? ssl->verify_depth
+                                          : TLS_DEFAULT_VERIFY_DEPTH) != 1)
+    {
+        return NGX_ERROR;
+    }
+
     return NGX_OK;
 }
 
@@ -852,7 +885,22 @@ ngx_int_t ngx_ssl_get_serial_number(ngx_connection_t *c, ngx_pool_t *pool,
 ngx_int_t ngx_ssl_get_fingerprint(ngx_connection_t *c, ngx_pool_t *pool,
     ngx_str_t *s) { return ngx_gmssl_empty(pool, s); }
 ngx_int_t ngx_ssl_get_client_verify(ngx_connection_t *c, ngx_pool_t *pool,
-    ngx_str_t *s) { ngx_str_set(s, "NONE"); return NGX_OK; }
+    ngx_str_t *s)
+{
+    int verify_result;
+
+    if (tls_get_verify_result(c->ssl->connection, &verify_result) != 1) {
+        ngx_str_set(s, "FAILED");
+        return NGX_OK;
+    }
+
+    if (verify_result == X509_verify_ok) {
+        ngx_str_set(s, "SUCCESS");
+    } else {
+        ngx_str_set(s, "FAILED");
+    }
+    return NGX_OK;
+}
 ngx_int_t ngx_ssl_get_client_v_start(ngx_connection_t *c, ngx_pool_t *pool,
     ngx_str_t *s) { return ngx_gmssl_empty(pool, s); }
 ngx_int_t ngx_ssl_get_client_v_end(ngx_connection_t *c, ngx_pool_t *pool,
@@ -999,6 +1047,18 @@ ngx_gmssl_configure_ctx(ngx_ssl_t *ssl)
                                           : TLS_DEFAULT_VERIFY_DEPTH) != 1)
     {
         return NGX_ERROR;
+    }
+
+    if (ssl->verify) {
+        if (tls_ctx_enable_certificate_request(ssl->ctx, 1) != 1) {
+            return NGX_ERROR;
+        }
+
+        if (ssl->verify == 3
+            && tls_ctx_enable_client_certificate_optional(ssl->ctx, 1) != 1)
+        {
+            return NGX_ERROR;
+        }
     }
 
     if (ssl->certificate.len == 0) {
