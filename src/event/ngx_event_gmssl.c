@@ -203,6 +203,19 @@ ngx_ssl_client_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
 
     ssl->verify_depth = depth;
 
+    /* ngx_ssl_certificate() may have initialized the TLS_CTX before the
+     * HTTP SSL module processes ssl_client_certificate.  In that case the
+     * normal lazy context setup has already run, so load the CA now. */
+    if (ssl->ctx && ssl->ctx->protocol
+        && tls_ctx_set_ca_certificates(ssl->ctx,
+                                       (char *) ssl->ca_certificate.data,
+                                       ssl->verify_depth
+                                          ? ssl->verify_depth
+                                          : TLS_DEFAULT_VERIFY_DEPTH) != 1)
+    {
+        return NGX_ERROR;
+    }
+
     return NGX_OK;
 }
 
