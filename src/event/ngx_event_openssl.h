@@ -16,6 +16,7 @@
 
 #include <gmssl/tls.h>
 #include <gmssl/version.h>
+#include <gmssl/x509_cer.h>
 
 #define NGX_SSL_NAME     "GmSSL"
 
