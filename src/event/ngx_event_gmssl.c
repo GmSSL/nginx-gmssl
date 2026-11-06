@@ -861,7 +861,11 @@ ngx_int_t ngx_ssl_get_client_verify(ngx_connection_t *c, ngx_pool_t *pool,
         return NGX_OK;
     }
 
-    ngx_str_set(s, verify_result == X509_verify_ok ? "SUCCESS" : "FAILED");
+    if (verify_result == X509_verify_ok) {
+        ngx_str_set(s, "SUCCESS");
+    } else {
+        ngx_str_set(s, "FAILED");
+    }
     return NGX_OK;
 }
 ngx_int_t ngx_ssl_get_client_v_start(ngx_connection_t *c, ngx_pool_t *pool,
