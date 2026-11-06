@@ -183,6 +183,26 @@ ngx_int_t
 ngx_ssl_client_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
     ngx_int_t depth)
 {
+    if (cert->len == 0) {
+        return NGX_OK;
+    }
+
+    if (ngx_conf_full_name(cf->cycle, cert, 1) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    /*
+     * ssl_client_certificate is the CA list sent in CertificateRequest and
+     * the trust store used to validate the client's certificate.  The GmSSL
+     * backend keeps both in the same TLS_CTX, so retain the configured file
+     * here just as ssl_trusted_certificate does.
+     */
+    if (ngx_gmssl_set_str(cf->pool, &ssl->ca_certificate, cert) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    ssl->verify_depth = depth;
+
     return NGX_OK;
 }
 
